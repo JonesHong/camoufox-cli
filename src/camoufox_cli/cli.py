@@ -10,11 +10,18 @@ import sys
 import time
 
 
-SOCKET_PREFIX = "/tmp/camoufox-cli-"
+def _runtime_dir() -> str:
+    """Return the per-user runtime directory (must match server.py)."""
+    xdg = os.environ.get("XDG_RUNTIME_DIR")
+    if xdg and os.path.isdir(xdg):
+        base = os.path.join(xdg, "camoufox-cli")
+    else:
+        base = os.path.join(os.path.expanduser("~"), ".camoufox-cli", "run")
+    return base
 
 
 def get_socket_path(session: str) -> str:
-    return f"{SOCKET_PREFIX}{session}.sock"
+    return os.path.join(_runtime_dir(), f"{session}.sock")
 
 
 def send_command(sock_path: str, command: dict) -> dict:
@@ -32,7 +39,9 @@ def send_command(sock_path: str, command: dict) -> dict:
     return json.loads(data.decode())
 
 
-def spawn_daemon(session: str, headed: bool, timeout: int, persistent: str | None, proxy: str | None = None) -> None:
+def spawn_daemon(
+    session: str, headed: bool, timeout: int, persistent: str | None, proxy: str | None = None
+) -> None:
     cmd = [sys.executable, "-m", "camoufox_cli", "--session", session, "--timeout", str(timeout)]
     if headed:
         cmd.append("--headed")
@@ -59,7 +68,9 @@ def spawn_daemon(session: str, headed: bool, timeout: int, persistent: str | Non
     sys.exit(1)
 
 
-def ensure_daemon(session: str, headed: bool, timeout: int, persistent: str | None, proxy: str | None = None) -> None:
+def ensure_daemon(
+    session: str, headed: bool, timeout: int, persistent: str | None, proxy: str | None = None
+) -> None:
     sock_path = get_socket_path(session)
     if os.path.exists(sock_path):
         # Verify daemon is actually alive by trying to connect
@@ -80,10 +91,11 @@ def ensure_daemon(session: str, headed: bool, timeout: int, persistent: str | No
 
 def list_sessions() -> list[str]:
     sessions = []
+    run_dir = _runtime_dir()
     try:
-        for name in os.listdir("/tmp"):
-            if name.startswith("camoufox-cli-") and name.endswith(".sock"):
-                sessions.append(name[len("camoufox-cli-"):-len(".sock")])
+        for name in os.listdir(run_dir):
+            if name.endswith(".sock"):
+                sessions.append(name[: -len(".sock")])
     except OSError:
         pass
     sessions.sort()
@@ -92,7 +104,14 @@ def list_sessions() -> list[str]:
 
 def parse_args(args: list[str]) -> tuple[dict, dict]:
     """Parse CLI args into (flags, command). Returns (flags_dict, command_json)."""
-    flags = {"session": "default", "headed": False, "timeout": 1800, "json": False, "persistent": None, "proxy": None}
+    flags = {
+        "session": "default",
+        "headed": False,
+        "timeout": 1800,
+        "json": False,
+        "persistent": None,
+        "proxy": None,
+    }
     rest = []
 
     i = 0
@@ -177,16 +196,16 @@ def build_command(action: str, rest: list[str]) -> dict:
             ref = _require(rest, 1, "Usage: camoufox-cli click @e1")
             return {"id": "r1", "action": "click", "params": {"ref": ref}}
         case "fill":
-            ref = _require(rest, 1, "Usage: camoufox-cli fill @e1 \"text\"")
-            text = _require(rest, 2, "Usage: camoufox-cli fill @e1 \"text\"")
+            ref = _require(rest, 1, 'Usage: camoufox-cli fill @e1 "text"')
+            text = _require(rest, 2, 'Usage: camoufox-cli fill @e1 "text"')
             return {"id": "r1", "action": "fill", "params": {"ref": ref, "text": text}}
         case "type":
-            ref = _require(rest, 1, "Usage: camoufox-cli type @e1 \"text\"")
-            text = _require(rest, 2, "Usage: camoufox-cli type @e1 \"text\"")
+            ref = _require(rest, 1, 'Usage: camoufox-cli type @e1 "text"')
+            text = _require(rest, 2, 'Usage: camoufox-cli type @e1 "text"')
             return {"id": "r1", "action": "type", "params": {"ref": ref, "text": text}}
         case "select":
-            ref = _require(rest, 1, "Usage: camoufox-cli select @e1 \"option\"")
-            value = _require(rest, 2, "Usage: camoufox-cli select @e1 \"option\"")
+            ref = _require(rest, 1, 'Usage: camoufox-cli select @e1 "option"')
+            value = _require(rest, 2, 'Usage: camoufox-cli select @e1 "option"')
             return {"id": "r1", "action": "select", "params": {"ref": ref, "value": value}}
         case "check":
             ref = _require(rest, 1, "Usage: camoufox-cli check @e1")
@@ -203,7 +222,7 @@ def build_command(action: str, rest: list[str]) -> dict:
             target = _require(rest, 1, "Usage: camoufox-cli text @e1 | camoufox-cli text body")
             return {"id": "r1", "action": "text", "params": {"target": target}}
         case "eval":
-            expr = _require(rest, 1, "Usage: camoufox-cli eval \"document.title\"")
+            expr = _require(rest, 1, 'Usage: camoufox-cli eval "document.title"')
             return {"id": "r1", "action": "eval", "params": {"expression": expr}}
         case "screenshot":
             params = {}
@@ -221,11 +240,19 @@ def build_command(action: str, rest: list[str]) -> dict:
         case "scroll":
             direction = _require(rest, 1, "Usage: camoufox-cli scroll down [px]")
             amount = int(rest[2]) if len(rest) > 2 else 500
-            return {"id": "r1", "action": "scroll", "params": {"direction": direction, "amount": amount}}
+            return {
+                "id": "r1",
+                "action": "scroll",
+                "params": {"direction": direction, "amount": amount},
+            }
         case "wait":
-            target = _require(rest, 1, "Usage: camoufox-cli wait @e1 | camoufox-cli wait 2000 | camoufox-cli wait --url \"pattern\"")
+            target = _require(
+                rest,
+                1,
+                'Usage: camoufox-cli wait @e1 | camoufox-cli wait 2000 | camoufox-cli wait --url "pattern"',
+            )
             if target == "--url":
-                pattern = _require(rest, 2, "Usage: camoufox-cli wait --url \"*/dashboard\"")
+                pattern = _require(rest, 2, 'Usage: camoufox-cli wait --url "*/dashboard"')
                 return {"id": "r1", "action": "wait", "params": {"url": pattern}}
             elif target.startswith("@"):
                 return {"id": "r1", "action": "wait", "params": {"ref": target}}
@@ -291,7 +318,13 @@ def print_response(response: dict, json_mode: bool) -> None:
         print(data["text"])
     elif "result" in data:
         v = data["result"]
-        print("null" if v is None else json.dumps(v, ensure_ascii=False) if not isinstance(v, str) else v)
+        print(
+            "null"
+            if v is None
+            else json.dumps(v, ensure_ascii=False)
+            if not isinstance(v, str)
+            else v
+        )
     elif data.get("closed"):
         pass  # silent
     elif "url" in data:
@@ -305,26 +338,78 @@ def print_response(response: dict, json_mode: bool) -> None:
 
 
 _APT_DEPS = [
-    "libxcb-shm0", "libx11-xcb1", "libx11-6", "libxcb1", "libxext6",
-    "libxrandr2", "libxcomposite1", "libxcursor1", "libxdamage1", "libxfixes3",
-    "libxi6", "libgtk-3-0", "libpangocairo-1.0-0", "libpango-1.0-0",
-    "libatk1.0-0", "libcairo-gobject2", "libcairo2", "libgdk-pixbuf-2.0-0",
-    "libxrender1", "libfreetype6", "libfontconfig1", "libdbus-1-3",
-    "libnss3", "libnspr4", "libatk-bridge2.0-0", "libdrm2", "libxkbcommon0",
-    "libatspi2.0-0", "libcups2", "libxshmfence1", "libgbm1",
+    "libxcb-shm0",
+    "libx11-xcb1",
+    "libx11-6",
+    "libxcb1",
+    "libxext6",
+    "libxrandr2",
+    "libxcomposite1",
+    "libxcursor1",
+    "libxdamage1",
+    "libxfixes3",
+    "libxi6",
+    "libgtk-3-0",
+    "libpangocairo-1.0-0",
+    "libpango-1.0-0",
+    "libatk1.0-0",
+    "libcairo-gobject2",
+    "libcairo2",
+    "libgdk-pixbuf-2.0-0",
+    "libxrender1",
+    "libfreetype6",
+    "libfontconfig1",
+    "libdbus-1-3",
+    "libnss3",
+    "libnspr4",
+    "libatk-bridge2.0-0",
+    "libdrm2",
+    "libxkbcommon0",
+    "libatspi2.0-0",
+    "libcups2",
+    "libxshmfence1",
+    "libgbm1",
 ]
 
 _DNF_DEPS = [
-    "nss", "nspr", "atk", "at-spi2-atk", "cups-libs", "libdrm",
-    "libXcomposite", "libXdamage", "libXrandr", "mesa-libgbm", "pango",
-    "alsa-lib", "libxkbcommon", "libxcb", "libX11-xcb", "libX11",
-    "libXext", "libXcursor", "libXfixes", "libXi", "gtk3", "cairo-gobject",
+    "nss",
+    "nspr",
+    "atk",
+    "at-spi2-atk",
+    "cups-libs",
+    "libdrm",
+    "libXcomposite",
+    "libXdamage",
+    "libXrandr",
+    "mesa-libgbm",
+    "pango",
+    "alsa-lib",
+    "libxkbcommon",
+    "libxcb",
+    "libX11-xcb",
+    "libX11",
+    "libXext",
+    "libXcursor",
+    "libXfixes",
+    "libXi",
+    "gtk3",
+    "cairo-gobject",
 ]
 
 _YUM_DEPS = [
-    "nss", "nspr", "atk", "at-spi2-atk", "cups-libs", "libdrm",
-    "libXcomposite", "libXdamage", "libXrandr", "mesa-libgbm", "pango",
-    "alsa-lib", "libxkbcommon",
+    "nss",
+    "nspr",
+    "atk",
+    "at-spi2-atk",
+    "cups-libs",
+    "libdrm",
+    "libXcomposite",
+    "libXdamage",
+    "libXrandr",
+    "mesa-libgbm",
+    "pango",
+    "alsa-lib",
+    "libxkbcommon",
 ]
 
 
@@ -337,12 +422,49 @@ def _resolve_apt_libasound() -> str:
     return "libasound2t64" if result.returncode == 0 else "libasound2"
 
 
+def _verify_binary_hash() -> None:
+    """Verify installed browser binary against known-good hash from SECURITY.md."""
+    import hashlib
+    from pathlib import Path
+
+    # Locate the binary
+    cache_dir = Path.home() / "Library" / "Caches" / "camoufox"
+    binary = cache_dir / "Camoufox.app" / "Contents" / "MacOS" / "camoufox"
+    if not binary.exists():
+        # Try Linux path
+        binary = cache_dir / "camoufox"
+    if not binary.exists():
+        return  # can't verify if binary location is unknown
+
+    sha256 = hashlib.sha256(binary.read_bytes()).hexdigest()
+
+    # Try to read known hash from SECURITY.md in the package directory
+    pkg_dir = Path(__file__).parent.parent.parent
+    security_md = pkg_dir / "SECURITY.md"
+    if not security_md.exists():
+        print(f"[camoufox-cli] Binary SHA256: {sha256}", file=sys.stderr)
+        print("[camoufox-cli] No SECURITY.md found to verify against.", file=sys.stderr)
+        return
+
+    content = security_md.read_text()
+    if sha256 in content:
+        print(f"[camoufox-cli] Binary hash verified ✅ ({sha256[:16]}...)", file=sys.stderr)
+    else:
+        print("[camoufox-cli] ⚠️  Binary hash MISMATCH!", file=sys.stderr)
+        print(f"[camoufox-cli]   Got:    {sha256}", file=sys.stderr)
+        print("[camoufox-cli]   Review SECURITY.md for expected hash.", file=sys.stderr)
+        print("[camoufox-cli]   This may indicate an updated or tampered binary.", file=sys.stderr)
+
+
 def _install_system_deps() -> None:
     import platform
     import shutil
 
     if platform.system() != "Linux":
-        print("[camoufox-cli] System dependencies are only needed on Linux, skipping.", file=sys.stderr)
+        print(
+            "[camoufox-cli] System dependencies are only needed on Linux, skipping.",
+            file=sys.stderr,
+        )
         return
 
     print("[camoufox-cli] Installing system dependencies...", file=sys.stderr)
@@ -356,7 +478,10 @@ def _install_system_deps() -> None:
     elif shutil.which("yum"):
         subprocess.run(["sudo", "yum", "install", "-y", *_YUM_DEPS], check=True)
     else:
-        print("[camoufox-cli] Could not detect a supported package manager (apt-get, dnf, yum).", file=sys.stderr)
+        print(
+            "[camoufox-cli] Could not detect a supported package manager (apt-get, dnf, yum).",
+            file=sys.stderr,
+        )
         sys.exit(1)
 
     print("[camoufox-cli] System dependencies installed.", file=sys.stderr)
@@ -376,9 +501,12 @@ def main():
     if action == "install":
         print("[camoufox-cli] Downloading browser...", file=sys.stderr)
         from camoufox.pkgman import CamoufoxFetcher
+
         fetcher = CamoufoxFetcher()
         fetcher.install()
         print("[camoufox-cli] Browser installed.", file=sys.stderr)
+        # Verify binary integrity if known hash is available
+        _verify_binary_hash()
         if command.get("params", {}).get("with_deps"):
             _install_system_deps()
         return
@@ -411,7 +539,9 @@ def main():
         return
 
     # Ensure daemon is running
-    ensure_daemon(flags["session"], flags["headed"], flags["timeout"], flags["persistent"], flags["proxy"])
+    ensure_daemon(
+        flags["session"], flags["headed"], flags["timeout"], flags["persistent"], flags["proxy"]
+    )
 
     sock_path = get_socket_path(flags["session"])
 

@@ -14,6 +14,21 @@ from .commands import execute
 from .protocol import parse_command, serialize_response
 
 
+def _runtime_dir() -> str:
+    """Return a per-user runtime directory with 0700 permissions."""
+    xdg = os.environ.get("XDG_RUNTIME_DIR")
+    if xdg and os.path.isdir(xdg):
+        base = os.path.join(xdg, "camoufox-cli")
+    else:
+        base = os.path.join(os.path.expanduser("~"), ".camoufox-cli", "run")
+    os.makedirs(base, mode=0o700, exist_ok=True)
+    # Verify ownership to prevent symlink attacks
+    st = os.stat(base)
+    if st.st_uid != os.getuid():
+        raise RuntimeError(f"Runtime directory {base} is not owned by current user")
+    return base
+
+
 class DaemonServer:
     def __init__(
         self,
@@ -26,8 +41,9 @@ class DaemonServer:
         self.session = session
         self.headless = headless
         self.timeout = timeout  # idle timeout in seconds
-        self.socket_path = f"/tmp/camoufox-cli-{session}.sock"
-        self.pid_path = f"/tmp/camoufox-cli-{session}.pid"
+        run_dir = _runtime_dir()
+        self.socket_path = os.path.join(run_dir, f"{session}.sock")
+        self.pid_path = os.path.join(run_dir, f"{session}.pid")
         self.manager = BrowserManager(persistent=persistent, proxy=proxy)
         self._server_socket: socket.socket | None = None
         self._last_activity = time.time()

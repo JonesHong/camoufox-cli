@@ -16,8 +16,8 @@ classifiers = [
 ]
 dependencies = [
     "camoufox[geoip]==0.4.11",
-    "playwright",
-    "Pillow",
+    "playwright>=1.58,<1.60",
+    "Pillow>=12.1,<13",
 ]
 
 [project.urls]
