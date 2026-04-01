@@ -15,7 +15,14 @@ from .protocol import parse_command, serialize_response
 
 
 class DaemonServer:
-    def __init__(self, session: str = "default", headless: bool = True, timeout: int = 1800, persistent: str | None = None, proxy: str | None = None):
+    def __init__(
+        self,
+        session: str = "default",
+        headless: bool = True,
+        timeout: int = 1800,
+        persistent: str | None = None,
+        proxy: str | None = None,
+    ):
         self.session = session
         self.headless = headless
         self.timeout = timeout  # idle timeout in seconds
@@ -42,13 +49,14 @@ class DaemonServer:
         self._server_socket = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
         try:
             self._server_socket.bind(self.socket_path)
+            os.chmod(self.socket_path, 0o700)  # owner-only access
             self._server_socket.listen(5)
             self._server_socket.settimeout(1.0)  # allow periodic checks
 
             while self._running:
                 try:
                     conn, _ = self._server_socket.accept()
-                except socket.timeout:
+                except TimeoutError:
                     continue
                 except OSError:
                     break
@@ -94,7 +102,9 @@ class DaemonServer:
         while self._running:
             time.sleep(10)
             if time.time() - self._last_activity > self.timeout:
-                print(f"[camoufox-cli] Idle timeout ({self.timeout}s), shutting down", file=sys.stderr)
+                print(
+                    f"[camoufox-cli] Idle timeout ({self.timeout}s), shutting down", file=sys.stderr
+                )
                 self._running = False
                 # Nudge the accept() loop
                 try:
