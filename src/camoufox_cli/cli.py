@@ -4,10 +4,23 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import socket
 import subprocess
 import sys
 import time
+
+_SESSION_RE = re.compile(r"^[A-Za-z0-9._-]{1,64}$")
+
+
+def _validate_session(session: str) -> str:
+    if not _SESSION_RE.match(session):
+        print(
+            f"Error: Invalid session name: {session!r}. Only [A-Za-z0-9._-] allowed.",
+            file=sys.stderr,
+        )
+        sys.exit(1)
+    return session
 
 
 def _runtime_dir() -> str:
@@ -21,7 +34,7 @@ def _runtime_dir() -> str:
 
 
 def get_socket_path(session: str) -> str:
-    return os.path.join(_runtime_dir(), f"{session}.sock")
+    return os.path.join(_runtime_dir(), f"{_validate_session(session)}.sock")
 
 
 def send_command(sock_path: str, command: dict) -> dict:

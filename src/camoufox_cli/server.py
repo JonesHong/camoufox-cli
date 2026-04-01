@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+import re
 import signal
 import socket
 import sys
@@ -12,6 +13,17 @@ import time
 from .browser import BrowserManager
 from .commands import execute
 from .protocol import parse_command, serialize_response
+
+_SESSION_RE = re.compile(r"^[A-Za-z0-9._-]{1,64}$")
+
+
+def _validate_session(session: str) -> str:
+    """Validate session name to prevent path traversal."""
+    if not _SESSION_RE.match(session):
+        raise ValueError(
+            f"Invalid session name: {session!r}. Only [A-Za-z0-9._-] allowed, max 64 chars."
+        )
+    return session
 
 
 def _runtime_dir() -> str:
@@ -38,7 +50,7 @@ class DaemonServer:
         persistent: str | None = None,
         proxy: str | None = None,
     ):
-        self.session = session
+        self.session = _validate_session(session)
         self.headless = headless
         self.timeout = timeout  # idle timeout in seconds
         run_dir = _runtime_dir()
@@ -87,15 +99,26 @@ class DaemonServer:
         finally:
             self._shutdown()
 
+    _MAX_PAYLOAD = 1024 * 1024  # 1MB max command payload
+    _CONN_TIMEOUT = 10  # seconds per connection
+
     def _handle_connection(self, conn: socket.socket) -> None:
+        conn.settimeout(self._CONN_TIMEOUT)
         data = b""
-        while True:
-            chunk = conn.recv(4096)
-            if not chunk:
-                break
-            data += chunk
-            if b"\n" in data:
-                break
+        try:
+            while True:
+                chunk = conn.recv(4096)
+                if not chunk:
+                    break
+                data += chunk
+                if len(data) > self._MAX_PAYLOAD:
+                    print("[camoufox-cli] Payload too large, dropping connection", file=sys.stderr)
+                    return
+                if b"\n" in data:
+                    break
+        except TimeoutError:
+            print("[camoufox-cli] Connection read timeout, dropping", file=sys.stderr)
+            return
 
         line = data.decode("utf-8").strip()
         if not line:

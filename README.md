@@ -17,7 +17,7 @@ OpenClaw, Claude Code, Cursor, Codex, and any agent that can run shell commands.
 
 Tell your AI agent (e.g. OpenClaw):
 
-> Install this CLI and skills from https://github.com/Bin-Huang/camoufox-cli
+> Install this CLI and skills from https://github.com/JonesHong/camoufox-cli
 
 Or install manually:
 
@@ -43,7 +43,7 @@ camoufox-cli install --with-deps
 
 ```bash
 # Add skills for AI agents (Claude Code, Cursor, Codex, etc.)
-npx skills add Bin-Huang/camoufox-cli
+npx skills add JonesHong/camoufox-cli
 ```
 
 ## Quick Start
