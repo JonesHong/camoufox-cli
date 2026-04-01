@@ -52,6 +52,16 @@ def send_command(sock_path: str, command: dict) -> dict:
     return json.loads(data.decode())
 
 
+def _log_dir() -> str:
+    d = os.path.join(os.path.expanduser("~"), ".camoufox-cli", "logs")
+    os.makedirs(d, mode=0o700, exist_ok=True)
+    return d
+
+
+def _is_debug() -> bool:
+    return os.environ.get("CAMOUFOX_DEBUG", "").strip() in ("1", "true", "yes")
+
+
 def spawn_daemon(
     session: str, headed: bool, timeout: int, persistent: str | None, proxy: str | None = None
 ) -> None:
@@ -63,11 +73,17 @@ def spawn_daemon(
     if proxy:
         cmd.extend(["--proxy", proxy])
 
+    log_file = os.path.join(_log_dir(), f"{session}.log")
+    log_fd = open(log_file, "a")
+    if _is_debug():
+        print(f"[camoufox-cli] Daemon log: {log_file}", file=sys.stderr)
+        print(f"[camoufox-cli] Daemon cmd: {' '.join(cmd)}", file=sys.stderr)
+
     subprocess.Popen(
         cmd,
         stdin=subprocess.DEVNULL,
-        stdout=subprocess.DEVNULL,
-        stderr=subprocess.DEVNULL,
+        stdout=log_fd,
+        stderr=log_fd,
         start_new_session=True,
     )
 
@@ -122,6 +138,7 @@ def parse_args(args: list[str]) -> tuple[dict, dict]:
         "headed": False,
         "timeout": 1800,
         "json": False,
+        "verbose": False,
         "persistent": None,
         "proxy": None,
     }
@@ -142,9 +159,15 @@ def parse_args(args: list[str]) -> tuple[dict, dict]:
             if i >= len(args):
                 print("Error: --timeout requires a value", file=sys.stderr)
                 sys.exit(1)
-            flags["timeout"] = int(args[i])
+            try:
+                flags["timeout"] = int(args[i])
+            except ValueError:
+                print(f"Error: --timeout must be an integer, got {args[i]!r}", file=sys.stderr)
+                sys.exit(1)
         elif args[i] == "--json":
             flags["json"] = True
+        elif args[i] == "--verbose":
+            flags["verbose"] = True
         elif args[i] == "--persistent":
             # Optional value: if next arg looks like a path, use it; otherwise use default
             if i + 1 < len(args) and ("/" in args[i + 1] or args[i + 1].startswith((".", "~"))):
@@ -252,7 +275,11 @@ def build_command(action: str, rest: list[str]) -> dict:
         # Scroll & Wait
         case "scroll":
             direction = _require(rest, 1, "Usage: camoufox-cli scroll down [px]")
-            amount = int(rest[2]) if len(rest) > 2 else 500
+            try:
+                amount = int(rest[2]) if len(rest) > 2 else 500
+            except ValueError:
+                print(f"Error: scroll amount must be an integer, got {rest[2]!r}", file=sys.stderr)
+                sys.exit(1)
             return {
                 "id": "r1",
                 "action": "scroll",
@@ -270,7 +297,12 @@ def build_command(action: str, rest: list[str]) -> dict:
             elif target.startswith("@"):
                 return {"id": "r1", "action": "wait", "params": {"ref": target}}
             elif target[0].isdigit():
-                return {"id": "r1", "action": "wait", "params": {"ms": int(target)}}
+                try:
+                    ms = int(target)
+                except ValueError:
+                    print(f"Error: wait time must be an integer, got {target!r}", file=sys.stderr)
+                    sys.exit(1)
+                return {"id": "r1", "action": "wait", "params": {"ms": ms}}
             else:
                 return {"id": "r1", "action": "wait", "params": {"selector": target}}
 
@@ -279,7 +311,12 @@ def build_command(action: str, rest: list[str]) -> dict:
             return {"id": "r1", "action": "tabs", "params": {}}
         case "switch":
             index = _require(rest, 1, "Usage: camoufox-cli switch <tab-index>")
-            return {"id": "r1", "action": "switch", "params": {"index": int(index)}}
+            try:
+                idx = int(index)
+            except ValueError:
+                print(f"Error: tab index must be an integer, got {index!r}", file=sys.stderr)
+                sys.exit(1)
+            return {"id": "r1", "action": "switch", "params": {"index": idx}}
         case "close-tab":
             return {"id": "r1", "action": "close-tab", "params": {}}
 
@@ -558,11 +595,20 @@ def main():
 
     sock_path = get_socket_path(flags["session"])
 
+    # Verbose: print the command JSON being sent
+    if flags["verbose"] or _is_debug():
+        print(f"[camoufox-cli] → {json.dumps(command, ensure_ascii=False)}", file=sys.stderr)
+
     # Send command with retry
     last_err = ""
     for attempt in range(5):
         try:
             response = send_command(sock_path, command)
+            if flags["verbose"] or _is_debug():
+                print(
+                    f"[camoufox-cli] ← {json.dumps(response, ensure_ascii=False)[:200]}",
+                    file=sys.stderr,
+                )
             print_response(response, flags["json"])
             return
         except Exception as e:
@@ -570,7 +616,11 @@ def main():
             if attempt < 4:
                 time.sleep(0.2 * (attempt + 1))
 
+    # On failure, show daemon log hint
+    log_file = os.path.join(_log_dir(), f"{flags['session']}.log")
     print(f"Error: Failed to connect to daemon after 5 attempts: {last_err}", file=sys.stderr)
+    if os.path.exists(log_file):
+        print(f"Hint: Check daemon log at {log_file}", file=sys.stderr)
     sys.exit(1)
 
 
@@ -625,5 +675,6 @@ Flags:
   --headed             Show browser window
   --timeout <secs>     Daemon idle timeout (default: 1800)
   --json               Output as JSON
+  --verbose            Show command JSON sent/received (also: CAMOUFOX_DEBUG=1)
   --persistent [path]  Use persistent browser profile (default: ~/.camoufox-cli/profiles/<session>)
   --proxy <url>        Proxy server (e.g. http://host:port)"""
