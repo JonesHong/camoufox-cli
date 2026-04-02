@@ -42,7 +42,18 @@ class BrowserManager:
 
         _ensure_browser_installed()
 
-        kwargs: dict = {"headless": headless}
+        kwargs: dict = {
+            "headless": headless,
+            "fonts": [
+                "PingFang TC",
+                "Heiti TC",
+                "STHeiti",
+                "Arial Unicode MS",
+                "Arial",
+                "Helvetica",
+                "Times New Roman",
+            ],
+        }
         if self._proxy:
             parsed = urlparse(self._proxy)
             if parsed.scheme not in ("http", "https"):
