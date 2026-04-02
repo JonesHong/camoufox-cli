@@ -543,7 +543,7 @@ def main():
 
     # Resolve default persistent path
     if flags["persistent"] == "":
-        flags["persistent"] = os.path.expanduser(f"~/.camoufox-cli/profiles/{flags['session']}")
+        flags["persistent"] = os.path.expanduser("~/.camoufox-profiles/master")
 
     action = command.get("action", "")
 
@@ -676,5 +676,5 @@ Flags:
   --timeout <secs>     Daemon idle timeout (default: 1800)
   --json               Output as JSON
   --verbose            Show command JSON sent/received (also: CAMOUFOX_DEBUG=1)
-  --persistent [path]  Use persistent browser profile (default: ~/.camoufox-cli/profiles/<session>)
+  --persistent [path]  Use persistent browser profile (default: ~/.camoufox-profiles/master)
   --proxy <url>        Proxy server (e.g. http://host:port)"""
